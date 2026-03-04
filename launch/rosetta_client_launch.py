@@ -54,7 +54,7 @@ from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessStart
 from launch_ros.event_handlers import OnStateTransition
 from launch.events import matches_action
-from launch.substitutions import EqualsSubstitution, LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode
 from launch_ros.events.lifecycle import ChangeState
 from lifecycle_msgs.msg import Transition
@@ -113,7 +113,11 @@ def launch_setup(context, *args, **kwargs):
             lifecycle_node_matcher=matches_action(rosetta_client_node),
             transition_id=Transition.TRANSITION_CONFIGURE,
         ),
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('configure'), 'true')),
+        condition=IfCondition(
+            PythonExpression(
+                ["'", LaunchConfiguration('configure'), "'.lower() in ['true', '1', 'yes']"]
+            )
+        ),
     )
 
     # Auto-activate event (triggered after configure completes)
@@ -122,7 +126,11 @@ def launch_setup(context, *args, **kwargs):
             lifecycle_node_matcher=matches_action(rosetta_client_node),
             transition_id=Transition.TRANSITION_ACTIVATE,
         ),
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('activate'), 'true')),
+        condition=IfCondition(
+            PythonExpression(
+                ["'", LaunchConfiguration('activate'), "'.lower() in ['true', '1', 'yes']"]
+            )
+        ),
     )
 
     # Chain events: process start -> configure -> activate

@@ -55,7 +55,6 @@ from launch.conditions import IfCondition
 from launch.event_handlers import OnExecutionComplete, OnProcessStart
 from launch.events import matches_action
 from launch.substitutions import (
-    EqualsSubstitution,
     LaunchConfiguration,
     PythonExpression,
 )
@@ -316,7 +315,13 @@ def generate_launch_description():
         output='screen',
         emulate_tty=True,
         condition=IfCondition(
-            EqualsSubstitution(LaunchConfiguration('enable_reward_classifier'), 'true')
+            PythonExpression(
+                [
+                    "'",
+                    LaunchConfiguration('enable_reward_classifier'),
+                    "'.lower() in ['true', '1', 'yes']",
+                ]
+            )
         ),
         remappings=[
             (LaunchConfiguration('reward_remap_from'),
@@ -414,7 +419,9 @@ def generate_launch_description():
                 transition_id=Transition.TRANSITION_CONFIGURE,
             ),
             condition=IfCondition(
-                EqualsSubstitution(LaunchConfiguration('configure'), 'true')
+                PythonExpression(
+                    ["'", LaunchConfiguration('configure'), "'.lower() in ['true', '1', 'yes']"]
+                )
             ),
         )
 
@@ -424,7 +431,9 @@ def generate_launch_description():
                 transition_id=Transition.TRANSITION_ACTIVATE,
             ),
             condition=IfCondition(
-                EqualsSubstitution(LaunchConfiguration('activate'), 'true')
+                PythonExpression(
+                    ["'", LaunchConfiguration('activate'), "'.lower() in ['true', '1', 'yes']"]
+                )
             ),
         )
 
@@ -452,7 +461,9 @@ def generate_launch_description():
             transition_id=Transition.TRANSITION_CONFIGURE,
         ),
         condition=IfCondition(
-            EqualsSubstitution(LaunchConfiguration('configure'), 'true')
+            PythonExpression(
+                ["'", LaunchConfiguration('configure'), "'.lower() in ['true', '1', 'yes']"]
+            )
         ),
     )
 
@@ -462,7 +473,9 @@ def generate_launch_description():
             transition_id=Transition.TRANSITION_ACTIVATE,
         ),
         condition=IfCondition(
-            EqualsSubstitution(LaunchConfiguration('activate'), 'true')
+            PythonExpression(
+                ["'", LaunchConfiguration('activate'), "'.lower() in ['true', '1', 'yes']"]
+            )
         ),
     )
 
