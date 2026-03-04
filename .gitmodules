@@ -1,0 +1,3 @@
+[submodule "ros2_sdk"]
+	path = ros2_sdk
+	url = git@github.com:zhoubin-me/ros2_sdk.git
