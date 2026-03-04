@@ -883,7 +883,11 @@ class EpisodeRecorderNode(LifecycleNode):
         """Close the writer and finalize the bag file."""
         with self._writer_lock:
             if self._writer is not None:
-                self._writer.close()  # Explicitly close to finalize MCAP indices
+                # Humble's rosbag2_py SequentialWriter does not expose close(),
+                # while newer distros do. Guard this call for compatibility.
+                close_fn = getattr(self._writer, "close", None)
+                if callable(close_fn):
+                    close_fn()
             self._writer = None
 
     def _write_metadata(self, bag_dir: Path, prompt: str) -> None:
