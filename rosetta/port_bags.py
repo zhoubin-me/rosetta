@@ -122,13 +122,13 @@ def _get_topic_types(reader: rosbag2_py.SequentialReader) -> dict[str, str]:
 def _build_buffers(
     specs: list[StreamSpec],
     topic_types: dict[str, str],
-) -> dict[str, tuple[StreamSpec, StreamBuffer]]:
+) -> dict[str, list[tuple[StreamSpec, StreamBuffer]]]:
     """Create StreamBuffers keyed by topic.
 
     Returns:
-        Topic-keyed dict: topic -> (spec, buffer), preserving insertion order.
+        Topic-keyed dict: topic -> [(spec, buffer), ...], preserving insertion order.
     """
-    buffers: dict[str, tuple[StreamSpec, StreamBuffer]] = {}
+    buffers: dict[str, list[tuple[StreamSpec, StreamBuffer]]] = {}
 
     for spec in specs:
         if spec.topic not in topic_types:
@@ -141,7 +141,7 @@ def _build_buffers(
             step_ns = int(1e9 / spec.fps) if spec.fps > 0 else int(1e9 / 30)
             buffer = StreamBuffer(policy="hold", step_ns=step_ns, tol_ns=0)
 
-        buffers[spec.topic] = (spec, buffer)
+        buffers.setdefault(spec.topic, []).append((spec, buffer))
 
     if not buffers:
         raise RuntimeError("No contract topics found in bag")
@@ -213,7 +213,7 @@ DTYPE_MAP = {
 
 def _sample_frame(
     tick_ns: int,
-    buffers: dict[str, tuple[StreamSpec, StreamBuffer]],
+    buffers: dict[str, list[tuple[StreamSpec, StreamBuffer]]],
 ) -> dict[str, Any]:
     """Sample a single frame from buffers at the given tick time.
 
@@ -221,8 +221,9 @@ def _sample_frame(
     """
     # Group by output key, preserving insertion order
     by_key: dict[str, list[tuple[StreamSpec, StreamBuffer]]] = {}
-    for spec, buffer in buffers.values():
-        by_key.setdefault(spec.key, []).append((spec, buffer))
+    for items in buffers.values():
+        for spec, buffer in items:
+            by_key.setdefault(spec.key, []).append((spec, buffer))
 
     frame: dict[str, Any] = {}
 
@@ -329,23 +330,23 @@ def _stream_frames_from_bag(bag_dir: Path, specs: list[StreamSpec]):
 
         # Push message to buffer
         if topic in buffers:
-            spec, buffer = buffers[topic]
-            msg = deserialize_message(data, get_message(spec.msg_type))
+            for spec, buffer in buffers[topic]:
+                msg = deserialize_message(data, get_message(spec.msg_type))
 
-            ts, used_fallback = get_message_timestamp_ns(msg, spec, bag_ns)
-            if (
-                spec.stamp_src == "header"
-                and used_fallback
-                and spec.key not in header_warned
-            ):
-                logging.warning(
-                    "Header stamp unavailable for '%s' in %s, using bag receive time",
-                    spec.key, bag_dir.name,
-                )
-                header_warned.add(spec.key)
-            val = decode_value(msg, spec)
-            if val is not None:
-                buffer.push(ts, val)
+                ts, used_fallback = get_message_timestamp_ns(msg, spec, bag_ns)
+                if (
+                    spec.stamp_src == "header"
+                    and used_fallback
+                    and spec.key not in header_warned
+                ):
+                    logging.warning(
+                        "Header stamp unavailable for '%s' in %s, using bag receive time",
+                        spec.key, bag_dir.name,
+                    )
+                    header_warned.add(spec.key)
+                val = decode_value(msg, spec)
+                if val is not None:
+                    buffer.push(ts, val)
 
     # Emit remaining frames
     while current_tick_idx < n_frames:
