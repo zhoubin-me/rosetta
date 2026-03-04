@@ -302,6 +302,57 @@ def _dec_joint_state(msg: Any, spec: ObservationStreamSpec) -> np.ndarray:
 
 
 # =============================================================================
+# HybridJointCommand Decoder
+# =============================================================================
+
+
+@register_decoder("xbot_common_interfaces/msg/HybridJointCommand", dtype="float64")
+def _dec_hybrid_joint_command(msg: Any, spec: ObservationStreamSpec) -> np.ndarray:
+    """Decode xbot_common_interfaces/HybridJointCommand.
+
+    With selector names like ["position.joint1", "velocity.joint2"]:
+      - Extracts specified fields by joint name lookup in msg.joint_name
+    With bare names like ["joint1", "joint2"]:
+      - Defaults to position field
+    Without names:
+      - Returns all positions
+    """
+    if not spec.names:
+        if hasattr(msg, "position") and msg.position:
+            return np.asarray(msg.position, dtype=np.float64)
+        return np.array([], dtype=np.float64)
+
+    name_to_idx = {name: i for i, name in enumerate(msg.joint_name)}
+    out = []
+    valid_fields = {"position", "velocity", "feedforward", "kp", "kd"}
+
+    for selector in spec.names:
+        if "." in selector:
+            field, joint_name = selector.split(".", 1)
+        else:
+            field, joint_name = "position", selector
+
+        if field not in valid_fields:
+            raise ValueError(
+                f"Unknown HybridJointCommand field '{field}'. "
+                f"Valid fields: {sorted(valid_fields)}"
+            )
+
+        if joint_name not in name_to_idx:
+            raise ValueError(
+                f"Joint '{joint_name}' not in message. Available: {list(msg.joint_name)}"
+            )
+
+        idx = name_to_idx[joint_name]
+        arr = getattr(msg, field)
+        if idx >= len(arr):
+            raise ValueError(f"Index {idx} out of range for {field} (len={len(arr)})")
+        out.append(float(arr[idx]))
+
+    return np.asarray(out, dtype=np.float64)
+
+
+# =============================================================================
 # IMU Decoder
 # =============================================================================
 

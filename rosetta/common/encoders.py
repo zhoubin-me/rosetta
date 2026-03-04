@@ -285,6 +285,81 @@ def _enc_joint_state(
 
 
 # =============================================================================
+# HybridJointCommand Encoder
+# =============================================================================
+
+
+@register_encoder("xbot_common_interfaces/msg/HybridJointCommand")
+def _enc_hybrid_joint_command(
+    action_vec: np.ndarray, spec: ActionStreamSpec, stamp_ns: int | None = None
+) -> Any:
+    """Encode to xbot_common_interfaces/HybridJointCommand.
+
+    With selector.names like ['position.joint1', 'velocity.joint2']:
+      - Maps values to specified fields by joint name
+    Without names:
+      - Maps action vector to positions with auto-generated joint names
+    """
+    msg_cls = get_message("xbot_common_interfaces/msg/HybridJointCommand")
+    msg = msg_cls()
+    _set_header_stamp(msg, stamp_ns)
+
+    arr = _apply_clamp(np.asarray(action_vec, dtype=np.float64).flatten(), spec.clamp)
+
+    if not spec.names:
+        msg.joint_name = [f"joint_{i}" for i in range(len(arr))]
+        msg.position = arr.tolist()
+        msg.velocity = [0.0] * len(arr)
+        msg.feedforward = [0.0] * len(arr)
+        msg.kp = [0.0] * len(arr)
+        msg.kd = [0.0] * len(arr)
+        return msg
+
+    if len(spec.names) != len(arr):
+        raise ValueError(f"names length ({len(spec.names)}) != action length ({len(arr)})")
+
+    valid_fields = {"position", "velocity", "feedforward", "kp", "kd"}
+    field_to_joints: dict[str, dict[str, int]] = {}
+    joint_order: list[str] = []
+    seen_joints: set[str] = set()
+
+    for i, path in enumerate(spec.names):
+        if "." in path:
+            field, joint_name = path.split(".", 1)
+        else:
+            field, joint_name = "position", path
+
+        if field not in valid_fields:
+            raise ValueError(
+                f"Unknown HybridJointCommand field '{field}'. "
+                f"Valid fields: {sorted(valid_fields)}"
+            )
+
+        field_to_joints.setdefault(field, {})[joint_name] = i
+        if joint_name not in seen_joints:
+            joint_order.append(joint_name)
+            seen_joints.add(joint_name)
+
+    msg.joint_name = joint_order
+    n_joints = len(joint_order)
+    joint_to_idx = {name: i for i, name in enumerate(joint_order)}
+
+    # Initialize all arrays so downstream controllers get dense vectors.
+    msg.position = [0.0] * n_joints
+    msg.velocity = [0.0] * n_joints
+    msg.feedforward = [0.0] * n_joints
+    msg.kp = [0.0] * n_joints
+    msg.kd = [0.0] * n_joints
+
+    for field, joint_map in field_to_joints.items():
+        target = getattr(msg, field)
+        for joint_name, arr_idx in joint_map.items():
+            target[joint_to_idx[joint_name]] = float(arr[arr_idx])
+
+    return msg
+
+
+# =============================================================================
 # JointTrajectory Encoder
 # =============================================================================
 
