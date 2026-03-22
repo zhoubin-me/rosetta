@@ -58,7 +58,7 @@ from launch.substitutions import (
     LaunchConfiguration,
     PythonExpression,
 )
-from launch_ros.actions import LifecycleNode
+from launch_ros.actions import LifecycleNode, Node
 from launch_ros.events.lifecycle import ChangeState
 from lifecycle_msgs.msg import Transition
 
@@ -97,6 +97,7 @@ def generate_launch_description():
     client_cfg = {**_yaml_params(default_rosetta_params, 'rosetta_client'), **_section('robot_policy')}
     recorder_cfg = {**_yaml_params(default_recorder_params, 'episode_recorder'), **_section('episode_recorder')}
     reward_cfg = {**_yaml_params(default_rosetta_params, 'rosetta_client'), **_section('reward_classifier')}
+    smoother_cfg = _section('action_smoother')
 
     # ==================================================================
     # Launch arguments
@@ -177,6 +178,69 @@ def generate_launch_description():
             'action_remap_to',
             default_value='/hil/policy/leader_arm/joint_states',
             description='Remapped action topic for policy output'
+        ),
+        DeclareLaunchArgument(
+            'enable_action_smoothing',
+            default_value=str(smoother_cfg.get('enable_action_smoothing', False)).lower(),
+            description='Enable Q5 HybridJointCommand smoothing between policy output and HIL mux'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_input_topic',
+            default_value=smoother_cfg.get(
+                'input_topic',
+                '/hil/policy_raw/wr1_controller/commands',
+            ),
+            description='Raw topic published by the policy node before smoothing'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_joint_state_topic',
+            default_value=smoother_cfg.get('joint_state_topic', '/joint_states'),
+            description='JointState topic used by the smoother'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_control_period_sec',
+            default_value=str(smoother_cfg.get('control_period_sec', 0.01)),
+            description='Smoother control period in seconds'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_joint_tolerance',
+            default_value=str(smoother_cfg.get('joint_tolerance', 0.02)),
+            description='Smoother joint tolerance'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_max_step_per_cycle',
+            default_value=str(smoother_cfg.get('max_step_per_cycle', 0.03)),
+            description='Max joint position change per smoothing cycle'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_reach_timeout_sec',
+            default_value=str(smoother_cfg.get('reach_timeout_sec', 5.0)),
+            description='Timeout before advancing to the latest queued target'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_kp_start_scale',
+            default_value=str(smoother_cfg.get('kp_start_scale', 0.5)),
+            description='Initial kp scale while ramping into a new target'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_kd_start_scale',
+            default_value=str(smoother_cfg.get('kd_start_scale', 0.5)),
+            description='Initial kd scale while ramping into a new target'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_gain_ramp_sec',
+            default_value=str(smoother_cfg.get('gain_ramp_sec', 1.0)),
+            description='Seconds to ramp gains from reduced to full value'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_wait_for_joint_state_sec',
+            default_value=str(smoother_cfg.get('wait_for_joint_state_sec', 2.0)),
+            description='Time to wait before warning about missing joint states'
+        ),
+        DeclareLaunchArgument(
+            'action_smoothing_drop_intermediate_targets',
+            default_value=str(smoother_cfg.get('drop_intermediate_targets', True)).lower(),
+            description='Keep only the latest queued policy target while smoothing'
         ),
 
         # --- HIL manager (defaults from rosetta_hil_manager.yaml) ---
@@ -266,6 +330,14 @@ def generate_launch_description():
     # ==================================================================
     # Remaps action output so HIL manager can mux between policy and teleop.
 
+    policy_action_output = PythonExpression([
+        "'", LaunchConfiguration('action_smoothing_input_topic'), "' if '",
+        LaunchConfiguration('enable_action_smoothing'),
+        "'.lower() in ['true', '1', 'yes'] else '",
+        LaunchConfiguration('action_remap_to'),
+        "'",
+    ])
+
     robot_policy_node = LifecycleNode(
         package='rosetta',
         executable='rosetta_client_node',
@@ -275,7 +347,7 @@ def generate_launch_description():
         emulate_tty=True,
         remappings=[
             (LaunchConfiguration('action_remap_from'),
-             LaunchConfiguration('action_remap_to')),
+             policy_action_output),
         ],
         parameters=[
             default_rosetta_params,
@@ -291,6 +363,46 @@ def generate_launch_description():
                 'feedback_rate_hz': LaunchConfiguration('feedback_rate_hz'),
                 'launch_local_server': True,
                 'obs_similarity_atol': LaunchConfiguration('obs_similarity_atol'),
+            },
+        ],
+        arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
+    )
+
+    action_smoother_node = Node(
+        package='rosetta',
+        executable='q5_action_smoother_node',
+        name='q5_action_smoother',
+        namespace='',
+        output='screen',
+        emulate_tty=True,
+        condition=IfCondition(
+            PythonExpression(
+                [
+                    "'",
+                    LaunchConfiguration('enable_action_smoothing'),
+                    "'.lower() in ['true', '1', 'yes']",
+                ]
+            )
+        ),
+        parameters=[
+            os.path.join(rosetta_share, 'params', 'q5_action_smoother.yaml'),
+            {
+                'input_topic': LaunchConfiguration('action_smoothing_input_topic'),
+                'output_topic': LaunchConfiguration('action_remap_to'),
+                'joint_state_topic': LaunchConfiguration('action_smoothing_joint_state_topic'),
+                'wait_for_joint_state_sec': LaunchConfiguration(
+                    'action_smoothing_wait_for_joint_state_sec'
+                ),
+                'control_period_sec': LaunchConfiguration('action_smoothing_control_period_sec'),
+                'joint_tolerance': LaunchConfiguration('action_smoothing_joint_tolerance'),
+                'max_step_per_cycle': LaunchConfiguration('action_smoothing_max_step_per_cycle'),
+                'reach_timeout_sec': LaunchConfiguration('action_smoothing_reach_timeout_sec'),
+                'kp_start_scale': LaunchConfiguration('action_smoothing_kp_start_scale'),
+                'kd_start_scale': LaunchConfiguration('action_smoothing_kd_start_scale'),
+                'gain_ramp_sec': LaunchConfiguration('action_smoothing_gain_ramp_sec'),
+                'drop_intermediate_targets': LaunchConfiguration(
+                    'action_smoothing_drop_intermediate_targets'
+                ),
             },
         ],
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
@@ -504,6 +616,7 @@ def generate_launch_description():
         launch_args
         + [
             robot_policy_node,
+            action_smoother_node,
             reward_classifier_node,
             episode_recorder_node,
             hil_manager_node,

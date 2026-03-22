@@ -1,0 +1,14 @@
+q5_action_smoother:
+  ros__parameters:
+    input_topic: "/hil/policy_raw/wr1_controller/commands"
+    output_topic: "/hil/policy/wr1_controller/commands"
+    joint_state_topic: "/joint_states"
+    wait_for_joint_state_sec: 2.0
+    control_period_sec: 0.01
+    joint_tolerance: 0.02
+    max_step_per_cycle: 0.03
+    reach_timeout_sec: 5.0
+    kp_start_scale: 0.5
+    kd_start_scale: 0.5
+    gain_ramp_sec: 1.0
+    drop_intermediate_targets: true

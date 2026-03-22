@@ -41,4 +41,9 @@ setup(
     ],
     description='Rosetta: ROS 2 utilities, common contract handling, and nodes for LeRobot integration.',
     license='Apache-2.0',
+    entry_points={
+        'console_scripts': [
+            'q5_action_smoother_node = rosetta.q5_action_smoother_node:main',
+        ],
+    },
 )

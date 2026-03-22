@@ -5,6 +5,7 @@
 #
 #   hil_manager     - RosettaHilManagerNode parameters
 #   robot_policy    - rosetta_client_node parameters (merged over rosetta_client.yaml)
+#   action_smoother - q5_action_smoother_node parameters
 #   episode_recorder - episode_recorder_node parameters (merged over episode_recorder.yaml)
 #   reward_classifier - rosetta_client_node (classifier) parameters
 #
@@ -78,6 +79,26 @@ robot_policy:
 
     # Observation similarity filtering tolerance (-1.0 to disable)
     obs_similarity_atol: -1.0
+
+# ==============================================================================
+# Action Smoother  (q5_action_smoother_node)
+# Disabled by default so non-Q5 launches keep existing behavior.
+# ==============================================================================
+
+action_smoother:
+  ros__parameters:
+    enable_action_smoothing: false
+    input_topic: "/hil/policy_raw/wr1_controller/commands"
+    joint_state_topic: "/joint_states"
+    wait_for_joint_state_sec: 2.0
+    control_period_sec: 0.01
+    joint_tolerance: 0.02
+    max_step_per_cycle: 0.03
+    reach_timeout_sec: 5.0
+    kp_start_scale: 0.5
+    kd_start_scale: 0.5
+    gain_ramp_sec: 1.0
+    drop_intermediate_targets: true
 
 # ==============================================================================
 # Episode Recorder  (episode_recorder_node)

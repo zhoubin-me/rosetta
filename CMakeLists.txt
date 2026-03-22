@@ -21,6 +21,7 @@ install(PROGRAMS
   scripts/rosetta_client_node
   scripts/port_bags
   scripts/rosetta_hil_manager_node
+  scripts/q5_action_smoother_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
